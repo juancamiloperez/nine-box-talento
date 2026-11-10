@@ -49,6 +49,7 @@
         <h2 style="margin:6px 0">Solicitud enviada</h2>
         <p>Espera a que el docente apruebe tu ingreso. <b>Esta página entrará automáticamente</b> en cuanto lo haga; no necesitas recargarla.</p>
         <p class="note" id="waitEmail"></p>
+        <button class="sm" id="btnResend">Reenviar aviso al docente</button>
         <button class="sm" id="btnCancelWait">Usar otro correo</button>
       </div>
       <div class="msg" id="authMsg"></div>
@@ -219,13 +220,23 @@ function hideWait() {
   $("waitBox").classList.add("hidden"); document.querySelector(".tabs").classList.remove("hidden");
   document.querySelector('.tab[data-tab="login"]').click();
 }
+$("btnResend").onclick = async () => {
+  let p = null; try { p = JSON.parse(LS.get("nb_req") || "null"); } catch {}
+  if (!p) return toast("Vuelve a llenar el formulario de solicitud con el mismo correo.");
+  $("btnResend").disabled = true;
+  const r = await api("solicitar", p);
+  setTimeout(() => $("btnResend").disabled = false, 120000);
+  toast(r.ok ? (r.correo_enviado ? "Aviso reenviado al docente" : "Aviso ya enviado hace poco; espera 2 minutos para reenviar") : (r.error || "No se pudo reenviar"));
+};
 $("btnCancelWait").onclick = () => { clearInterval(waitTimer); LS.del("nb_wait"); hideWait(); };
 
 $("fReq").onsubmit = async (e) => {
   e.preventDefault();
   $("btnReq").disabled = true;
   const email = $("rEmail").value.trim().toLowerCase();
-  const r = await api("solicitar", { nombre: $("rNombre").value, email, grupo: $("rGrupo").value, equipo: $("rEquipo").value });
+  const payload = { nombre: $("rNombre").value, email, grupo: $("rGrupo").value, equipo: $("rEquipo").value };
+  LS.set("nb_req", JSON.stringify(payload));
+  const r = await api("solicitar", payload);
   $("btnReq").disabled = false;
   if (!r.ok) return msg(r.error || "No se pudo enviar la solicitud.");
   $("fReq").reset();

@@ -164,9 +164,20 @@ Deno.serve(async (req) => {
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail("Correo no válido.");
         if (!grupo) return fail("Indica tu grupo.");
         if (equipo.length < 2) return fail("Indica el nombre de tu equipo.");
-        const { data: existe } = await db.from("nb_estudiantes").select("estado").eq("email", email).maybeSingle();
+        const { data: existe } = await db.from("nb_estudiantes").select("*").eq("email", email).maybeSingle();
         if (existe) {
-          if (existe.estado === "pendiente") return json({ ok: true, ya_existia: true, estado: "pendiente" });
+          if (existe.estado === "pendiente") {
+            // Reenviar el aviso al docente (máximo uno cada 2 minutos por solicitud)
+            const ult = existe.ultimo_aviso ? new Date(existe.ultimo_aviso).getTime() : 0;
+            let reenviado = false;
+            if (Date.now() - ult > 120_000) {
+              const c = await enviarCorreoAdmin(existe);
+              reenviado = c.enviado;
+              console.log(c.enviado ? `Aviso reenviado: ${existe.email}` : `Correo no enviado: ${c.motivo}`);
+              if (c.enviado) await db.from("nb_estudiantes").update({ ultimo_aviso: new Date().toISOString() }).eq("id", existe.id);
+            }
+            return json({ ok: true, ya_existia: true, estado: "pendiente", correo_enviado: reenviado });
+          }
           return fail(existe.estado === "aprobado"
             ? "Este correo ya fue aprobado. Usa la pestaña “Ingresar”."
             : "La solicitud con este correo fue rechazada. Habla con el docente.");
@@ -176,6 +187,7 @@ Deno.serve(async (req) => {
         if (error) return fail("No se pudo registrar la solicitud. Intenta de nuevo.");
         const correo = await enviarCorreoAdmin(row);
         if (!correo.enviado) console.error("Correo no enviado:", correo.motivo);
+        else { console.log(`Aviso enviado: ${email}`); await db.from("nb_estudiantes").update({ ultimo_aviso: new Date().toISOString() }).eq("email", email); }
         return json({ ok: true, estado: "pendiente", correo_enviado: correo.enviado });
       }
       case "login": {
