@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simulador Matriz Nine Box · Talento Humano</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+
+<!-- ============ ACCESO ============ -->
+<section id="vAuth">
+  <header>
+    <h1>Simulador Matriz Nine Box</h1>
+    <p>Administración del Talento Humano. Para usar el simulador, solicita acceso; el docente aprobará tu solicitud.</p>
+  </header>
+  <div class="auth">
+    <div class="card">
+      <div class="tabs">
+        <button class="tab on" data-tab="login">Ingresar</button>
+        <button class="tab" data-tab="req">Solicitar acceso</button>
+      </div>
+
+      <form id="fLogin">
+        <label class="f">Correo electrónico</label>
+        <input type="email" id="lEmail" required autocomplete="email">
+        <label class="f">PIN</label>
+        <input type="password" id="lPin" inputmode="numeric" pattern="\d{4,6}" maxlength="6" required autocomplete="current-password">
+        <div style="margin-top:14px"><button class="primary" type="submit" id="btnLogin">Ingresar</button></div>
+      </form>
+
+      <form id="fReq" class="hidden">
+        <label class="f">Nombre completo</label>
+        <input type="text" id="rNombre" maxlength="80" required>
+        <label class="f">Correo electrónico</label>
+        <input type="email" id="rEmail" maxlength="120" required>
+        <label class="f">Grupo / curso</label>
+        <input type="text" id="rGrupo" maxlength="40" placeholder="p. ej., ADMON-01" list="dlGrupos" required>
+        <datalist id="dlGrupos"></datalist>
+        <label class="f">Nombre del equipo</label>
+        <input type="text" id="rEquipo" maxlength="50" placeholder="Escribe el nombre exacto acordado con tu equipo" list="dlEquipos" required>
+        <datalist id="dlEquipos"></datalist>
+        <p class="note" style="margin:4px 0 0">Si tu equipo ya existe, aparecerá en la lista: elígelo para quedar en la misma matriz que tus compañeros.</p>
+        <label class="f">Crea un PIN (4 a 6 dígitos)</label>
+        <input type="password" id="rPin" inputmode="numeric" pattern="\d{4,6}" maxlength="6" required autocomplete="new-password">
+        <label class="f">Repite el PIN</label>
+        <input type="password" id="rPin2" inputmode="numeric" pattern="\d{4,6}" maxlength="6" required autocomplete="new-password">
+        <div style="margin-top:14px"><button class="primary" type="submit" id="btnReq">Enviar solicitud</button></div>
+      </form>
+
+      <div class="msg" id="authMsg"></div>
+    </div>
+    <p class="note" style="text-align:center;margin-top:14px">Guarda tu PIN: lo necesitarás cada vez que ingreses.</p>
+  </div>
+</section>
+
+<!-- ============ SIMULADOR ============ -->
+<section id="vApp" class="hidden">
+<header>
+  <div class="topbar">
+    <div>
+      <h1>Simulador Matriz Nine Box</h1>
+      <p>Evalúen a los integrantes del equipo bajo <b>hipótesis</b>, observen en qué cuadrante quedan según <b>desempeño</b> (eje X) y <b>potencial</b> (eje Y), y revisen las estrategias recomendadas.</p>
+    </div>
+    <div class="who">
+      <div><b id="whoName"></b></div>
+      <div>Equipo <b id="whoTeam"></b> · Grupo <b id="whoGroup"></b></div>
+      <div class="savestate" id="saveState">—</div>
+      <div style="margin-top:6px"><button class="sm" id="btnRefresh">Actualizar</button> <button class="sm" id="btnLogout">Salir</button></div>
+    </div>
+  </div>
+  <div class="toolbar">
+    <button class="primary" id="btnExample">Cargar equipo de ejemplo</button>
+    <button id="btnBaseline" title="Guarda las posiciones actuales para comparar después de cambiar hipótesis">📌 Fijar línea base</button>
+    <button id="btnClearBase">Quitar línea base</button>
+    <button id="btnExport">Copiar resultados</button>
+    <button class="danger" id="btnReset">Vaciar matriz del equipo</button>
+  </div>
+</header>
+
+<main>
+  <section style="display:flex;flex-direction:column;gap:18px">
+    <div class="card">
+      <h2>1. Integrantes evaluados</h2>
+      <div class="members" id="members"></div>
+      <div class="addrow">
+        <input type="text" id="newName" placeholder="Nombre del integrante" maxlength="40">
+        <button class="primary" id="btnAdd">Agregar</button>
+      </div>
+    </div>
+    <div class="card" id="editor"></div>
+  </section>
+
+  <section class="right">
+    <div class="card">
+      <h2>2. Matriz Nine Box</h2>
+      <div class="matrixwrap">
+        <div class="yaxis">POTENCIAL →</div>
+        <div class="grid" id="grid"></div>
+        <div class="xaxis">DESEMPEÑO →</div>
+      </div>
+      <div class="axisticks"><span></span><span>Bajo</span><span>Medio</span><span>Alto</span></div>
+      <p class="note" style="margin:10px 0 0">Haz clic en una caja para ver su interpretación y estrategias; haz clic en un nombre para editar su evaluación.</p>
+    </div>
+
+    <div class="two">
+      <div class="card detail" id="detail"></div>
+      <div class="card"><h2>3. Resumen del equipo</h2><div id="summary"></div></div>
+    </div>
+
+    <div class="card" id="movesCard" style="display:none">
+      <h2>4. Movimientos frente a la línea base</h2>
+      <p class="note" style="margin-top:0">Muestra cómo cambió la clasificación al modificar las hipótesis o calificaciones después de fijar la línea base.</p>
+      <div id="moves"></div>
+    </div>
+
+    <details>
+      <summary>⚙️ Configuración: pesos de los criterios y umbrales</summary>
+      <p class="note">Cada criterio se califica de 1 a 5. El puntaje del eje es el promedio ponderado. Los umbrales definen dónde termina "Bajo" y dónde empieza "Alto".</p>
+      <div class="settings">
+        <div><h3>Pesos – Desempeño</h3><div id="wPerf"></div></div>
+        <div><h3>Pesos – Potencial</h3><div id="wPot"></div></div>
+      </div>
+      <h3>Umbrales</h3>
+      <div class="thr">
+        Bajo si puntaje &lt; <input type="number" id="cut1" step="0.1" min="1" max="5">
+        · Alto si puntaje ≥ <input type="number" id="cut2" step="0.1" min="1" max="5">
+        <span class="note">(entre ambos = Medio)</span>
+      </div>
+    </details>
+
+    <details>
+      <summary>📘 Guía para el estudiante</summary>
+      <h3>¿Cómo usar el simulador?</h3>
+      <ol>
+        <li>Agreguen a los integrantes del equipo (pueden usar seudónimos).</li>
+        <li>Para cada uno, escriban la <b>hipótesis</b>: el escenario supuesto bajo el cual lo evalúan.</li>
+        <li>Califiquen los 4 criterios de desempeño (lo que la persona <i>logra hoy</i>) y los 4 de potencial (lo que <i>podría llegar a lograr</i>).</li>
+        <li>Revisen la caja asignada y sus estrategias. Luego <b>fijen una línea base</b>, cambien la hipótesis y observen si la persona se mueve de caja.</li>
+        <li>Discutan: ¿la clasificación cambia por la persona o por el escenario supuesto?</li>
+      </ol>
+      <p class="note">Todos los integrantes de tu equipo trabajan sobre la <b>misma matriz</b>. Los cambios se guardan automáticamente; si otra persona guarda al mismo tiempo, verás un aviso y se cargará la versión más reciente.</p>
+      <h3>Sesgos a vigilar al evaluar</h3>
+      <ul>
+        <li><b>Efecto halo:</b> una cualidad destacada "contamina" todas las calificaciones.</li>
+        <li><b>Recencia:</b> pesar solo lo ocurrido en los últimos días.</li>
+        <li><b>Indulgencia / severidad:</b> calificar a todos alto (o bajo) por afinidad o rigidez.</li>
+        <li><b>Tendencia central:</b> poner 3 a todos para no comprometerse.</li>
+        <li><b>Similitud:</b> calificar mejor a quien se parece a uno.</li>
+      </ul>
+      <h3>Limitaciones</h3>
+      <p class="note">La matriz es una herramienta de conversación y calibración, no un veredicto. La ubicación depende de calificaciones subjetivas, de los pesos y de los umbrales elegidos.</p>
+    </details>
+  </section>
+</main>
+</section>
+
+<div class="modal" id="modal">
+  <div class="card">
+    <h2>Resultados (texto separado por tabulaciones)</h2>
+    <p class="note">Selecciona el texto y cópialo. Puedes pegarlo en Excel o Google Sheets.</p>
+    <textarea id="exportTxt" readonly></textarea>
+    <div style="text-align:right;margin-top:10px"><button class="primary" onclick="document.getElementById('modal').classList.remove('on')">Cerrar</button></div>
+  </div>
+</div>
+
+<script src="assets/core.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let TOKEN = store.get("nb_token");
+let ME = null, TEAM = null, M = defaultModel(), VERSION = 0;
+let UI = { selected: null, selBox: "2-2" };
+let dirty = false, saving = false, saveTimer = null, pollTimer = null;
+
+// ---------- ACCESO ----------
+function msg(t, kind = "err") { const e = $("authMsg"); e.className = "msg on " + kind; e.textContent = t; }
+document.querySelectorAll(".tab").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === b));
+  $("fLogin").classList.toggle("hidden", b.dataset.tab !== "login");
+  $("fReq").classList.toggle("hidden", b.dataset.tab !== "req");
+  $("authMsg").className = "msg";
+  if (b.dataset.tab === "req") loadTeams();
+});
+let TEAMS = [];
+async function loadTeams() {
+  const r = await api("equipos_publicos");
+  if (!r.ok) return;
+  TEAMS = r.equipos;
+  $("dlGrupos").innerHTML = [...new Set(TEAMS.map((t) => t.grupo))].map((g) => `<option value="${esc(g)}">`).join("");
+  fillTeams();
+}
+function fillTeams() {
+  const g = $("rGrupo").value.trim().toUpperCase();
+  $("dlEquipos").innerHTML = TEAMS.filter((t) => !g || t.grupo === g).map((t) => `<option value="${esc(t.nombre)}">${g ? "" : esc(t.grupo)}</option>`).join("");
+}
+$("rGrupo").oninput = fillTeams;
+
+$("fReq").onsubmit = async (e) => {
+  e.preventDefault();
+  if ($("rPin").value !== $("rPin2").value) return msg("Los PIN no coinciden.");
+  if (!/^\d{4,6}$/.test($("rPin").value)) return msg("El PIN debe tener entre 4 y 6 dígitos.");
+  $("btnReq").disabled = true;
+  const r = await api("solicitar", { nombre: $("rNombre").value, email: $("rEmail").value, grupo: $("rGrupo").value, equipo: $("rEquipo").value, pin: $("rPin").value });
+  $("btnReq").disabled = false;
+  if (!r.ok) return msg(r.error || "No se pudo enviar la solicitud.");
+  $("fReq").reset();
+  msg("Solicitud enviada. Cuando el docente la apruebe podrás ingresar con tu correo y tu PIN en la pestaña “Ingresar”.", "okm");
+};
+$("fLogin").onsubmit = async (e) => {
+  e.preventDefault();
+  $("btnLogin").disabled = true;
+  const r = await api("login", { email: $("lEmail").value, pin: $("lPin").value });
+  $("btnLogin").disabled = false;
+  if (!r.ok) return msg(r.error || "No fue posible ingresar.", r.error && r.error.includes("pendiente") ? "info" : "err");
+  TOKEN = r.token; store.set("nb_token", TOKEN);
+  enterApp(r);
+};
+
+function enterApp(r) {
+  ME = r.estudiante; TEAM = r.equipo;
+  if (!TEAM) { msg("Tu cuenta aún no tiene equipo asignado. Consulta con el docente."); return; }
+  M = normModel(TEAM.data); VERSION = TEAM.version;
+  UI.selected = M.members[0]?.id || null; UI.selBox = UI.selected ? calc(M, M.members[0]).k : "2-2";
+  $("whoName").textContent = ME.nombre; $("whoTeam").textContent = TEAM.nombre; $("whoGroup").textContent = TEAM.grupo;
+  $("vAuth").classList.add("hidden"); $("vApp").classList.remove("hidden");
+  setSave("ok", TEAM.updated_by ? `Última edición: ${TEAM.updated_by}, ${fmtFecha(TEAM.updated_at)}` : "Matriz nueva");
+  renderSettings(); render(false);
+  clearInterval(pollTimer); pollTimer = setInterval(poll, 20000);
+}
+function logout(m) {
+  api("logout", { token: TOKEN }); TOKEN = null; store.del("nb_token");
+  clearInterval(pollTimer); $("vApp").classList.add("hidden"); $("vAuth").classList.remove("hidden");
+  if (m) msg(m, "info");
+}
+$("btnLogout").onclick = async () => { if (dirty) await saveNow(); logout(); };
+
+// ---------- GUARDADO ----------
+function setSave(kind, text) { const e = $("saveState"); e.className = "savestate " + (kind === "dirty" ? "dirty" : kind === "err" ? "err" : ""); e.textContent = text; }
+function changed() { dirty = true; setSave("dirty", "Cambios sin guardar…"); clearTimeout(saveTimer); saveTimer = setTimeout(saveNow, 1500); }
+async function saveNow() {
+  if (!dirty || saving) return;
+  saving = true; dirty = false; setSave("dirty", "Guardando…");
+  const r = await api("guardar", { token: TOKEN, data: M, version: VERSION });
+  saving = false;
+  if (r.ok) { VERSION = r.version; setSave("ok", "Guardado ✓ " + fmtFecha(r.updated_at)); if (dirty) changed(); return; }
+  if (r.conflicto) {
+    M = normModel(r.equipo.data); VERSION = r.equipo.version; dirty = false;
+    toast(`${r.equipo.updated_by || "Otro integrante"} guardó cambios antes que tú. Se cargó la versión más reciente; repite tu último cambio.`);
+    setSave("ok", `Actualizado desde el servidor (${r.equipo.updated_by || ""})`); renderSettings(); render(false); return;
+  }
+  if (r.status === 401 || r.status === 403) return logout(r.error);
+  dirty = true; setSave("err", "Error al guardar. Reintentando…"); saveTimer = setTimeout(saveNow, 5000);
+}
+async function poll(force = false) {
+  if (!TOKEN) return;
+  const typing = document.activeElement && ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName) && $("vApp").contains(document.activeElement);
+  if (!force && (dirty || saving || typing)) return;
+  const r = await api("cargar", { token: TOKEN });
+  if (!r.ok) { if (r.status === 401 || r.status === 403) logout(r.error); return; }
+  if (r.equipo && r.equipo.version !== VERSION) {
+    M = normModel(r.equipo.data); VERSION = r.equipo.version;
+    if (UI.selected && !M.members.find((m) => m.id === UI.selected)) UI.selected = M.members[0]?.id || null;
+    setSave("ok", `Actualizado: ${r.equipo.updated_by || ""}, ${fmtFecha(r.equipo.updated_at)}`); renderSettings(); render(false);
+    if (force) toast("Matriz actualizada");
+  } else if (force) toast("Ya tienes la versión más reciente");
+}
+$("btnRefresh").onclick = async () => { if (dirty) await saveNow(); poll(true); };
+window.addEventListener("beforeunload", (e) => { if (dirty) { saveNow(); e.preventDefault(); e.returnValue = ""; } });
+
+// ---------- SIMULADOR ----------
+const getSel = () => M.members.find((m) => m.id === UI.selected);
+function render(markChanged = true) {
+  if (markChanged) changed();
+  renderMembers(); renderEditor(); renderGrid(); renderRest();
+}
+function renderRest() {
+  $("detail").innerHTML = boxDetailHTML(M, UI.selBox);
+  $("summary").innerHTML = summaryHTML(M);
+  $("movesCard").style.display = M.baseline ? "" : "none";
+  $("moves").innerHTML = movesHTML(M);
+}
+function renderMembers() {
+  const el = $("members");
+  if (!M.members.length) { el.innerHTML = '<div class="empty">Aún no hay integrantes. Agrega uno o carga el equipo de ejemplo.</div>'; return; }
+  el.innerHTML = M.members.map((m) => { const c = calc(M, m); return `<div class="mrow ${m.id === UI.selected ? "sel" : ""}" data-id="${m.id}">
+    <span class="nm">${esc(m.name)}</span><span class="badge b-${c.box.tone}">${c.box.n} · ${c.box.t}</span></div>`; }).join("");
+  el.querySelectorAll(".mrow").forEach((r) => r.onclick = () => { UI.selected = r.dataset.id; UI.selBox = calc(M, getSel()).k; render(false); });
+}
+function renderGrid() {
+  drawGrid($("grid"), M, { selBox: UI.selBox, selected: UI.selected,
+    onBox: (k) => { UI.selBox = k; renderGrid(); renderRest(); },
+    onMember: (id) => { UI.selected = id; UI.selBox = calc(M, getSel()).k; render(false); } });
+}
+function critRows(arr, labels, help, kind) {
+  return labels.map((l, i) => `<div class="crit" title="${esc(help[i])}"><span class="l">${l}</span>
+   <input type="range" min="1" max="5" step="1" value="${arr[i]}" data-k="${kind}" data-i="${i}"><b>${arr[i]}</b></div>`).join("");
+}
+function renderEditor() {
+  const el = $("editor"), m = getSel();
+  if (!m) { el.innerHTML = '<h2>Evaluación</h2><div class="empty">Selecciona un integrante para evaluarlo.</div>'; return; }
+  const c = calc(M, m);
+  el.innerHTML = `<h2>Evaluación de ${esc(m.name)}</h2>
+   <label class="f">Nombre</label><input type="text" id="eName" value="${esc(m.name)}" maxlength="40">
+   <label class="f">Rol en el equipo</label><input type="text" id="eRole" value="${esc(m.role)}" placeholder="p. ej., Coordinador logístico" maxlength="60">
+   <label class="f">Hipótesis / escenario supuesto</label><textarea id="eHyp" maxlength="600" placeholder="Supongamos que...">${esc(m.hyp)}</textarea>
+   <h3>Desempeño (1 = muy bajo · 5 = sobresaliente)</h3>${critRows(m.perf, PERF, PERF_HELP, "perf")}
+   <h3>Potencial (1 = muy bajo · 5 = sobresaliente)</h3>${critRows(m.pot, POT, POT_HELP, "pot")}
+   <div class="scores">
+     <div class="score"><small>Desempeño</small><strong id="sP">${c.p.toFixed(2)}</strong> <span id="lP" class="note">${LEVELS[lvl(M, c.p)]}</span></div>
+     <div class="score"><small>Potencial</small><strong id="sQ">${c.q.toFixed(2)}</strong> <span id="lQ" class="note">${LEVELS[lvl(M, c.q)]}</span></div>
+   </div>
+   <p style="margin:12px 0 0">Ubicación: <span class="badge b-${c.box.tone}" id="eBox">Caja ${c.box.n} · ${c.box.t}</span></p>
+   <div style="margin-top:12px;text-align:right"><button class="danger" id="eDel">Eliminar integrante</button></div>`;
+  el.querySelector("#eName").oninput = (e) => { m.name = e.target.value || "Sin nombre"; changed(); renderMembers(); renderGrid(); renderRest(); };
+  el.querySelector("#eRole").oninput = (e) => { m.role = e.target.value; changed(); renderRest(); };
+  el.querySelector("#eHyp").oninput = (e) => { m.hyp = e.target.value; changed(); renderRest(); };
+  el.querySelectorAll("input[type=range]").forEach((r) => r.oninput = () => {
+    m[r.dataset.k][+r.dataset.i] = +r.value; r.nextElementSibling.textContent = r.value;
+    const c2 = calc(M, m);
+    el.querySelector("#sP").textContent = c2.p.toFixed(2); el.querySelector("#sQ").textContent = c2.q.toFixed(2);
+    el.querySelector("#lP").textContent = LEVELS[lvl(M, c2.p)]; el.querySelector("#lQ").textContent = LEVELS[lvl(M, c2.q)];
+    const b = el.querySelector("#eBox"); b.className = "badge b-" + c2.box.tone; b.textContent = "Caja " + c2.box.n + " · " + c2.box.t;
+    UI.selBox = c2.k; changed(); renderMembers(); renderGrid(); renderRest();
+  });
+  el.querySelector("#eDel").onclick = () => confirm2("eDel", "Haz clic de nuevo para eliminar a " + m.name, () => {
+    M.members = M.members.filter((x) => x.id !== m.id); if (M.baseline) delete M.baseline[m.id];
+    UI.selected = M.members[0]?.id || null; render(); });
+}
+function renderSettings() {
+  const mk = (id, labels, w, key) => { $(id).innerHTML = labels.map((l, i) => `<div class="crit"><span class="l">${l}</span><input type="range" min="0" max="3" step="0.5" value="${w[i]}" data-key="${key}" data-i="${i}"><b>${w[i]}</b></div>`).join(""); };
+  mk("wPerf", PERF, M.wPerf, "wPerf"); mk("wPot", POT, M.wPot, "wPot");
+  document.querySelectorAll("#wPerf input,#wPot input").forEach((r) => r.oninput = () => { M[r.dataset.key][+r.dataset.i] = +r.value; r.nextElementSibling.textContent = r.value; render(); });
+  $("cut1").value = M.cut1; $("cut2").value = M.cut2;
+  const upd = () => { const a = +$("cut1").value, b = +$("cut2").value; if (isNaN(a) || isNaN(b)) return; if (a > b) { toast("El umbral bajo no puede superar al alto"); return; } M.cut1 = a; M.cut2 = b; render(); };
+  $("cut1").onchange = upd; $("cut2").onchange = upd;
+}
+
+const pend = {};
+function confirm2(key, text, fn) { if (pend[key]) { pend[key] = false; fn(); return; } pend[key] = true; toast(text); setTimeout(() => pend[key] = false, 3500); }
+const newMember = (name, role = "", hyp = "", perf = [3, 3, 3, 3], pot = [3, 3, 3, 3]) => ({ id: uid(), name, role, hyp, perf, pot });
+
+$("btnAdd").onclick = () => { const v = $("newName").value.trim(); if (!v) return toast("Escribe un nombre");
+  const m = newMember(v); M.members.push(m); UI.selected = m.id; UI.selBox = calc(M, m).k; $("newName").value = ""; render(); };
+$("newName").onkeydown = (e) => { if (e.key === "Enter") $("btnAdd").click(); };
+$("btnExample").onclick = () => {
+  const go = () => {
+    M.members = [
+      newMember("Laura", "Líder de proyecto", "Supongamos que el proveedor se retrasa 2 semanas y Laura debe reorganizar el cronograma sola.", [5, 4, 5, 4], [5, 5, 4, 4]),
+      newMember("Andrés", "Analista de datos", "Supongamos que Andrés entrega todos los informes a tiempo, pero no le interesa coordinar a otros.", [5, 5, 4, 3], [2, 2, 2, 3]),
+      newMember("Camila", "Investigadora", "Supongamos que Camila acaba de unirse al equipo y aún no domina la herramienta, aunque aprende muy rápido.", [2, 3, 2, 3], [5, 4, 5, 4]),
+      newMember("Felipe", "Diseñador", "Supongamos que Felipe cumple lo mínimo y entrega con algunos errores que otros corrigen.", [3, 3, 3, 3], [3, 3, 3, 3]),
+      newMember("Valentina", "Redactora", "Supongamos que Valentina entrega tarde con frecuencia y participa poco en las reuniones.", [2, 2, 1, 2], [2, 1, 2, 2]),
+      newMember("Santiago", "Coordinador logístico", "Supongamos que Santiago propone ideas valiosas, pero su ejecución es irregular.", [3, 3, 4, 3], [4, 4, 4, 3]),
+    ];
+    M.baseline = null; UI.selected = M.members[0].id; UI.selBox = calc(M, M.members[0]).k; render(); toast("Equipo de ejemplo cargado");
+  };
+  if (M.members.length) confirm2("ex", "Esto reemplazará la matriz de tu equipo. Haz clic de nuevo para confirmar.", go); else go();
+};
+$("btnReset").onclick = () => confirm2("reset", "Esto vacía la matriz para TODO tu equipo. Haz clic de nuevo para confirmar.", () => {
+  const keep = { wPerf: M.wPerf, wPot: M.wPot, cut1: M.cut1, cut2: M.cut2 };
+  M = Object.assign(defaultModel(), keep); UI.selected = null; render(); toast("Matriz vaciada"); });
+$("btnBaseline").onclick = () => { if (!M.members.length) return toast("Primero agrega integrantes");
+  M.baseline = {}; M.members.forEach((m) => M.baseline[m.id] = calc(M, m).k); render(); toast("Línea base fijada. Ahora cambia hipótesis y calificaciones."); };
+$("btnClearBase").onclick = () => { M.baseline = null; render(); toast("Línea base eliminada"); };
+$("btnExport").onclick = () => {
+  const txt = [["Grupo", "Equipo", ...TSV_HEAD].join("\t"), ...modelTSV(M, [TEAM.grupo, TEAM.nombre])].join("\n");
+  copyText(txt, $("exportTxt"));
+};
+
+// ---------- INICIO ----------
+(async () => {
+  if (!TOKEN) return;
+  const r = await api("cargar", { token: TOKEN });
+  if (r.ok) enterApp(r); else { store.del("nb_token"); TOKEN = null; }
+})();
+</script>
+</body>
+</html>

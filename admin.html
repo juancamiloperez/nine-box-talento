@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Panel docente · Nine Box</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+<header>
+  <div class="topbar">
+    <div>
+      <h1>Panel docente · Nine Box</h1>
+      <p>Aprueba solicitudes de ingreso y revisa los resultados de cada equipo.</p>
+    </div>
+    <div class="who hidden" id="adminBar"><button class="sm" id="btnReload">Actualizar</button> <button class="sm" id="btnOut">Salir</button></div>
+  </div>
+</header>
+
+<!-- Decisión desde el enlace del correo -->
+<section id="vToken" class="hidden">
+  <div class="auth"><div class="card" id="tokenCard"></div></div>
+</section>
+
+<!-- Login administrador -->
+<section id="vLogin" class="hidden">
+  <div class="auth"><div class="card">
+    <h2>Ingreso del docente</h2>
+    <form id="fAdmin">
+      <label class="f">Contraseña de administrador</label>
+      <input type="password" id="aPass" required autocomplete="current-password">
+      <div style="margin-top:14px"><button class="primary" type="submit" id="btnA">Ingresar</button></div>
+    </form>
+    <div class="msg" id="aMsg"></div>
+  </div></div>
+</section>
+
+<!-- Panel -->
+<section id="vPanel" class="hidden">
+  <main class="single" style="display:flex;flex-direction:column;gap:18px">
+    <div id="banner"></div>
+    <div class="card">
+      <div class="tabs">
+        <button class="tab on" data-tab="sol">Solicitudes <span class="badge b-a" id="cntPend">0</span></button>
+        <button class="tab" data-tab="eq">Resultados por equipo</button>
+      </div>
+
+      <div id="tSol">
+        <div class="filters">
+          <select id="fEstado"><option value="pendiente">Pendientes</option><option value="aprobado">Aprobados</option><option value="rechazado">Rechazados</option><option value="">Todos</option></select>
+          <input type="text" id="fBuscar" placeholder="Buscar nombre, correo, grupo o equipo">
+          <button class="ok hidden" id="btnApproveAll">Aprobar todas las pendientes visibles</button>
+        </div>
+        <div id="solTable"></div>
+      </div>
+
+      <div id="tEq" class="hidden">
+        <div class="filters">
+          <select id="fGrupo"></select>
+          <button id="btnExportAll">Copiar resultados de todos los equipos</button>
+        </div>
+        <div class="teamcards" id="teamCards"></div>
+      </div>
+    </div>
+
+    <div id="teamView" class="hidden" style="display:flex;flex-direction:column;gap:18px"></div>
+  </main>
+</section>
+
+<div class="modal" id="modal">
+  <div class="card">
+    <h2 id="modalTitle">Resultados</h2>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<script src="assets/core.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let ATOKEN = store.get("nb_admin");
+let DATA = { estudiantes: [], equipos: [] };
+let selTeam = null, selBox = "2-2";
+const show = (v) => ["vToken", "vLogin", "vPanel"].forEach((x) => $(x).classList.toggle("hidden", x !== v));
+
+// ---------- Enlace del correo (?t=...) ----------
+const T = new URLSearchParams(location.search).get("t");
+async function tokenView() {
+  show("vToken");
+  const c = $("tokenCard");
+  c.innerHTML = '<p class="note">Cargando solicitud…</p>';
+  const r = await api("token_info", { t: T });
+  if (!r.ok) { c.innerHTML = `<h2>Enlace no válido</h2><p>${esc(r.error)}</p><p><a href="admin.html">Ir al panel docente</a></p>`; return; }
+  const e = r.estudiante;
+  const estado = { pendiente: "b-a", aprobado: "b-g", rechazado: "b-r" }[e.estado];
+  c.innerHTML = `<h2>Solicitud de ingreso</h2>
+    <table><tr><th>Estudiante</th><td>${esc(e.nombre)}</td></tr><tr><th>Correo</th><td>${esc(e.email)}</td></tr>
+    <tr><th>Grupo</th><td>${esc(e.grupo)}</td></tr><tr><th>Equipo</th><td>${esc(e.equipo_nombre)}</td></tr>
+    <tr><th>Fecha</th><td>${fmtFecha(e.created_at)}</td></tr><tr><th>Estado</th><td><span class="badge ${estado}">${e.estado}</span></td></tr></table>
+    <div style="margin-top:14px;display:flex;gap:8px"><button class="ok" id="tA">Aprobar</button><button class="danger fill" id="tR">Rechazar</button></div>
+    <div class="msg" id="tMsg"></div>
+    <p class="note" style="margin-top:14px"><a href="admin.html">Ir al panel docente completo</a></p>`;
+  const go = async (d) => {
+    $("tA").disabled = $("tR").disabled = true;
+    const x = await api("decidir_token", { t: T, d });
+    const m = $("tMsg");
+    if (x.ok) { m.className = "msg on okm"; m.textContent = d === "aprobar" ? "Solicitud aprobada. El estudiante ya puede ingresar con su correo y PIN." : "Solicitud rechazada."; setTimeout(tokenView, 1200); }
+    else { m.className = "msg on err"; m.textContent = x.error; $("tA").disabled = $("tR").disabled = false; }
+  };
+  $("tA").onclick = () => go("aprobar"); $("tR").onclick = () => go("rechazar");
+}
+
+// ---------- Login ----------
+$("fAdmin").onsubmit = async (e) => {
+  e.preventDefault(); $("btnA").disabled = true;
+  const r = await api("admin_login", { password: $("aPass").value });
+  $("btnA").disabled = false;
+  if (!r.ok) { $("aMsg").className = "msg on err"; $("aMsg").textContent = r.error; return; }
+  ATOKEN = r.token; store.set("nb_admin", ATOKEN); $("aPass").value = ""; enterPanel();
+};
+$("btnOut").onclick = () => { store.del("nb_admin"); ATOKEN = null; $("adminBar").classList.add("hidden"); show("vLogin"); };
+$("btnReload").onclick = () => loadData(true);
+
+async function enterPanel() {
+  show("vPanel"); $("adminBar").classList.remove("hidden");
+  const ok = await loadData();
+  if (!ok) return;
+  const s = await api("admin_estado_correo", { token: ATOKEN });
+  if (s.ok && (!s.resend || !s.admin_email))
+    $("banner").innerHTML = `<div class="banner warn"><b>Correo de notificación no configurado.</b> Las solicitudes se registran y puedes aprobarlas aquí, pero no te llegará el correo hasta que configures ${!s.resend ? "<code>RESEND_API_KEY</code>" : ""} ${!s.admin_email ? "<code>ADMIN_EMAIL</code>" : ""} en los secretos de la función en Supabase.</div>`;
+}
+async function loadData(msgOk) {
+  const r = await api("admin_datos", { token: ATOKEN });
+  if (!r.ok) { if (r.status === 401) { store.del("nb_admin"); ATOKEN = null; show("vLogin"); } else toast(r.error); return false; }
+  DATA = r;
+  if (selTeam && !DATA.equipos.find((t) => t.id === selTeam)) selTeam = null;
+  renderSol(); renderGroups(); renderTeams(); renderTeamView();
+  if (msgOk) toast("Datos actualizados");
+  return true;
+}
+
+// ---------- Tabs ----------
+document.querySelectorAll(".tab").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".tab").forEach((x) => x.classList.toggle("on", x === b));
+  $("tSol").classList.toggle("hidden", b.dataset.tab !== "sol");
+  $("tEq").classList.toggle("hidden", b.dataset.tab !== "eq");
+  $("teamView").classList.toggle("hidden", b.dataset.tab !== "eq" || !selTeam);
+});
+
+// ---------- Solicitudes ----------
+$("fEstado").onchange = renderSol; $("fBuscar").oninput = renderSol;
+function filteredSol() {
+  const st = $("fEstado").value, q = $("fBuscar").value.trim().toLowerCase();
+  return DATA.estudiantes.filter((e) => (!st || e.estado === st) && (!q || [e.nombre, e.email, e.grupo, e.equipo_nombre].join(" ").toLowerCase().includes(q)));
+}
+function renderSol() {
+  const pend = DATA.estudiantes.filter((e) => e.estado === "pendiente").length;
+  $("cntPend").textContent = pend;
+  const rows = filteredSol();
+  $("btnApproveAll").classList.toggle("hidden", !rows.some((e) => e.estado === "pendiente"));
+  if (!rows.length) { $("solTable").innerHTML = '<div class="empty">No hay solicitudes con este filtro.</div>'; return; }
+  const cls = { pendiente: "b-a", aprobado: "b-g", rechazado: "b-r" };
+  $("solTable").innerHTML = `<div style="overflow:auto"><table><thead><tr><th>Estudiante</th><th>Grupo</th><th>Equipo</th><th>Solicitud</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
+    ${rows.map((e) => `<tr data-id="${e.id}">
+      <td><b>${esc(e.nombre)}</b><br><span class="note">${esc(e.email)}</span></td>
+      <td>${esc(e.grupo)}</td><td>${esc(e.equipo_nombre)}</td>
+      <td class="note">${fmtFecha(e.created_at)}</td>
+      <td><span class="badge ${cls[e.estado]}">${e.estado}</span></td>
+      <td style="white-space:nowrap">
+        ${e.estado !== "aprobado" ? `<button class="sm ok" data-a="aprobar">Aprobar</button>` : ""}
+        ${e.estado !== "rechazado" ? `<button class="sm danger" data-a="rechazar">Rechazar</button>` : ""}
+        <button class="sm" data-a="mover">Cambiar equipo</button>
+        <button class="sm danger" data-a="eliminar" title="Elimina la solicitud para que pueda volver a solicitar (p. ej., si olvidó el PIN)">Eliminar</button>
+      </td></tr>`).join("")}</tbody></table></div>
+    <p class="note">Si un estudiante olvida su PIN: elimina su solicitud y pídele que solicite acceso de nuevo. Su equipo y la matriz no se pierden.</p>`;
+  $("solTable").querySelectorAll("button[data-a]").forEach((b) => b.onclick = () => solAction(b.closest("tr").dataset.id, b.dataset.a, b));
+}
+const pendC = {};
+async function solAction(id, a, btn) {
+  const e = DATA.estudiantes.find((x) => x.id === id);
+  if (a === "mover") return moverModal(e);
+  if (a === "eliminar") {
+    const k = "del" + id;
+    if (!pendC[k]) { pendC[k] = true; toast("Haz clic de nuevo en Eliminar para confirmar"); setTimeout(() => pendC[k] = false, 3500); return; }
+    btn.disabled = true; const r = await api("admin_eliminar", { token: ATOKEN, id }); if (!r.ok) toast(r.error); return loadData();
+  }
+  btn.disabled = true;
+  const r = await api("admin_decidir", { token: ATOKEN, id, d: a });
+  if (!r.ok) toast(r.error); else toast(a === "aprobar" ? `${e.nombre} aprobado` : `${e.nombre} rechazado`);
+  loadData();
+}
+$("btnApproveAll").onclick = async () => {
+  const ids = filteredSol().filter((e) => e.estado === "pendiente").map((e) => e.id);
+  if (!pendC.all) { pendC.all = true; toast(`Haz clic de nuevo para aprobar ${ids.length} solicitud(es)`); setTimeout(() => pendC.all = false, 3500); return; }
+  pendC.all = false; $("btnApproveAll").disabled = true;
+  for (const id of ids) await api("admin_decidir", { token: ATOKEN, id, d: "aprobar" });
+  $("btnApproveAll").disabled = false; toast(`${ids.length} aprobada(s)`); loadData();
+};
+function moverModal(e) {
+  $("modalTitle").textContent = "Cambiar grupo / equipo de " + e.nombre;
+  $("modalBody").innerHTML = `<label class="f">Grupo</label><input type="text" id="mvG" value="${esc(e.grupo)}" list="mvGl">
+    <datalist id="mvGl">${[...new Set(DATA.equipos.map((t) => t.grupo))].map((g) => `<option value="${esc(g)}">`).join("")}</datalist>
+    <label class="f">Equipo</label><input type="text" id="mvE" value="${esc(e.equipo_nombre)}" list="mvEl">
+    <datalist id="mvEl">${DATA.equipos.map((t) => `<option value="${esc(t.nombre)}">${esc(t.grupo)}</option>`).join("")}</datalist>
+    <p class="note">Si el equipo no existe, se crea al guardar (para estudiantes aprobados).</p>
+    <div style="text-align:right;margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button id="mvC">Cancelar</button><button class="primary" id="mvS">Guardar</button></div>`;
+  $("modal").classList.add("on");
+  $("mvC").onclick = () => $("modal").classList.remove("on");
+  $("mvS").onclick = async () => {
+    const r = await api("admin_mover", { token: ATOKEN, id: e.id, grupo: $("mvG").value, equipo: $("mvE").value });
+    if (!r.ok) return toast(r.error);
+    $("modal").classList.remove("on"); toast("Equipo actualizado"); loadData();
+  };
+}
+
+// ---------- Equipos ----------
+$("fGrupo").onchange = renderTeams;
+function renderGroups() {
+  const cur = $("fGrupo").value;
+  const gs = [...new Set(DATA.equipos.map((t) => t.grupo))];
+  $("fGrupo").innerHTML = `<option value="">Todos los grupos</option>` + gs.map((g) => `<option ${g === cur ? "selected" : ""}>${esc(g)}</option>`).join("");
+}
+function membersOf(teamId) { return DATA.estudiantes.filter((e) => e.equipo_id === teamId && e.estado === "aprobado"); }
+function renderTeams() {
+  const g = $("fGrupo").value;
+  const ts = DATA.equipos.filter((t) => !g || t.grupo === g);
+  if (!ts.length) { $("teamCards").innerHTML = '<div class="empty">Aún no hay equipos. Se crean cuando apruebas la primera solicitud de cada equipo.</div>'; return; }
+  $("teamCards").innerHTML = ts.map((t) => {
+    const M = normModel(t.data);
+    const counts = {}; M.members.forEach((m) => { const k = calc(M, m).k; counts[k] = (counts[k] || 0) + 1; });
+    let mini = ""; for (let q = 2; q >= 0; q--) for (let p = 0; p <= 2; p++) { const k = p + "-" + q; mini += `<div class="tone-${BOXES[k].tone}">${counts[k] || ""}</div>`; }
+    return `<div class="tcard ${t.id === selTeam ? "sel" : ""}" data-id="${t.id}">
+      <div style="display:flex;justify-content:space-between;gap:6px"><b>${esc(t.nombre)}</b><span class="badge b-n">${esc(t.grupo)}</span></div>
+      <div class="note">${membersOf(t.id).length} estudiante(s) · ${M.members.length} evaluado(s)</div>
+      <div class="note">${t.updated_by ? `Última edición: ${esc(t.updated_by)}<br>${fmtFecha(t.updated_at)}` : "Sin cambios todavía"}</div>
+      <div class="minigrid">${mini}</div></div>`;
+  }).join("");
+  $("teamCards").querySelectorAll(".tcard").forEach((c) => c.onclick = () => { selTeam = c.dataset.id; selBox = "2-2"; renderTeams(); renderTeamView(); $("teamView").scrollIntoView({ behavior: "smooth" }); });
+}
+function renderTeamView() {
+  const el = $("teamView"), t = DATA.equipos.find((x) => x.id === selTeam);
+  const onEq = !$("tEq").classList.contains("hidden");
+  if (!t) { el.classList.add("hidden"); return; }
+  el.classList.toggle("hidden", !onEq);
+  const M = normModel(t.data), studs = membersOf(t.id);
+  el.innerHTML = `<div class="card">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0">Equipo ${esc(t.nombre)} · Grupo ${esc(t.grupo)}</h2>
+        <div><button class="sm" id="tvCopy">Copiar resultados del equipo</button> <button class="sm danger" id="tvDel">Eliminar equipo</button></div>
+      </div>
+      <p class="note">Estudiantes: ${studs.length ? studs.map((s) => esc(s.nombre)).join(", ") : "ninguno aprobado"} · Pesos desempeño ${M.wPerf.join("/")} · potencial ${M.wPot.join("/")} · Umbrales ${M.cut1} / ${M.cut2}</p>
+      <div class="matrixwrap"><div class="yaxis">POTENCIAL →</div><div class="grid" id="tvGrid"></div><div class="xaxis">DESEMPEÑO →</div></div>
+      <div class="axisticks"><span></span><span>Bajo</span><span>Medio</span><span>Alto</span></div>
+    </div>
+    <div class="two"><div class="card detail" id="tvDetail"></div><div class="card"><h2>Resumen del equipo</h2>${summaryHTML(M)}</div></div>
+    <div class="card"><h2>Hipótesis y calificaciones</h2>${M.members.length ? `<div style="overflow:auto"><table><thead><tr><th>Integrante</th><th>Hipótesis</th>${PERF.map((p, i) => `<th title="${p}">D${i+1}</th>`).join("")}${POT.map((p, i) => `<th title="${p}">P${i+1}</th>`).join("")}<th>Caja</th></tr></thead><tbody>
+      ${M.members.map((m) => { const c = calc(M, m); return `<tr><td><b>${esc(m.name)}</b>${m.role ? `<br><span class="note">${esc(m.role)}</span>` : ""}</td><td class="note" style="min-width:260px;max-width:420px">${esc(m.hyp) || "—"}</td>${m.perf.map((v) => `<td>${v}</td>`).join("")}${m.pot.map((v) => `<td>${v}</td>`).join("")}<td><span class="badge b-${c.box.tone}">${c.box.n} · ${c.box.t}</span></td></tr>`; }).join("")}
+      </tbody></table></div><p class="note">D1–D4: ${PERF.join(", ")}. P1–P4: ${POT.join(", ")}.</p>` : '<div class="empty">El equipo aún no ha evaluado a nadie.</div>'}
+      ${M.baseline ? `<h3>Movimientos frente a su línea base</h3>${movesHTML(M)}` : ""}</div>`;
+  const draw = () => { drawGrid($("tvGrid"), M, { selBox, onBox: (k) => { selBox = k; draw(); } }); $("tvDetail").innerHTML = boxDetailHTML(M, selBox); };
+  draw();
+  $("tvCopy").onclick = () => copyText([["Grupo", "Equipo", ...TSV_HEAD].join("\t"), ...modelTSV(M, [t.grupo, t.nombre])].join("\n"), exportArea());
+  $("tvDel").onclick = async () => {
+    if (!pendC.tdel) { pendC.tdel = true; toast("Se borrará la matriz de este equipo. Haz clic de nuevo para confirmar"); setTimeout(() => pendC.tdel = false, 3500); return; }
+    pendC.tdel = false; const r = await api("admin_eliminar_equipo", { token: ATOKEN, id: t.id }); if (!r.ok) return toast(r.error); selTeam = null; toast("Equipo eliminado"); loadData();
+  };
+}
+function exportArea() {
+  $("modalTitle").textContent = "Resultados (texto separado por tabulaciones)";
+  $("modalBody").innerHTML = `<p class="note">Selecciona el texto y cópialo; puedes pegarlo en Excel o Google Sheets.</p><textarea id="exTxt" readonly></textarea><div style="text-align:right;margin-top:10px"><button class="primary" onclick="document.getElementById('modal').classList.remove('on')">Cerrar</button></div>`;
+  return $("exTxt");
+}
+$("btnExportAll").onclick = () => {
+  const g = $("fGrupo").value;
+  const lines = [["Grupo", "Equipo", ...TSV_HEAD].join("\t")];
+  DATA.equipos.filter((t) => !g || t.grupo === g).forEach((t) => lines.push(...modelTSV(normModel(t.data), [t.grupo, t.nombre])));
+  if (lines.length === 1) return toast("No hay evaluaciones para copiar");
+  copyText(lines.join("\n"), exportArea());
+};
+
+// ---------- Inicio ----------
+if (T) tokenView();
+else if (ATOKEN) enterPanel();
+else show("vLogin");
+</script>
+</body>
+</html>
