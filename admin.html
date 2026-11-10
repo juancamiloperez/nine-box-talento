@@ -136,8 +136,8 @@ async function enterPanel() {
   const ok = await loadData();
   if (!ok) return;
   const s = await api("admin_estado_correo", { token: ATOKEN });
-  if (s.ok && (!s.resend || !s.admin_email))
-    $("banner").innerHTML = `<div class="banner warn"><b>Correo de notificación no configurado.</b> Las solicitudes se registran y puedes aprobarlas aquí, pero no te llegará el correo hasta que configures ${!s.resend ? "<code>RESEND_API_KEY</code>" : ""} ${!s.admin_email ? "<code>ADMIN_EMAIL</code>" : ""} en los secretos de la función en Supabase.</div>`;
+  if (s.ok && !s.correo)
+    $("banner").innerHTML = `<div class="banner warn"><b>Aviso por correo no configurado.</b> Las solicitudes se registran y puedes aprobarlas aquí, pero no te llegará el correo hasta que configures <code>GMAIL_SCRIPT_URL</code> en Supabase (ver README).</div>`;
 }
 async function loadData(msgOk) {
   const r = await api("admin_datos", { token: ATOKEN });

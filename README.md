@@ -12,18 +12,21 @@ Simulador web para que los estudiantes evalúen, bajo hipótesis, el desempeño 
 | Páginas estáticas | GitHub Pages (este repositorio) |
 | API | Supabase Edge Function `ninebox-api` (`supabase/functions/ninebox-api/index.ts`) |
 | Datos | Tablas `nb_equipos`, `nb_estudiantes`, `nb_sesiones` (RLS activado, sin acceso público directo) |
-| Correo al docente | Resend (`onboarding@resend.dev`) |
+| Correo al docente | Gmail del docente vía Google Apps Script (`gmail-apps-script.gs`) |
 
 ## Configuración (una sola vez)
 
-En Supabase → **Edge Functions → Secrets**, crear:
+### 1. Aviso por Gmail (sin Resend)
+1. Entra a https://script.google.com con tu cuenta de Gmail → **Proyecto nuevo**.
+2. Borra lo que aparece y pega el contenido de `gmail-apps-script.gs`. Guarda.
+3. Selecciona la función `probar` y pulsa **Ejecutar** → autoriza los permisos → te llega un correo de prueba.
+4. **Implementar → Nueva implementación → Aplicación web** · Ejecutar como: **Yo** · Acceso: **Cualquier usuario** → **Implementar** → copia la URL.
+5. En Supabase → Edge Functions → Secrets crea `GMAIL_SCRIPT_URL` con esa URL.
 
-| Secreto | Valor |
-|---|---|
-| `RESEND_API_KEY` | API key de tu cuenta en resend.com |
-| `ADMIN_EMAIL` | El mismo correo con el que creaste la cuenta de Resend (sin dominio propio, Resend solo envía a ese correo) |
-| `ADMIN_PASSWORD` | Contraseña para entrar a `admin.html` |
-| `APP_URL` *(opcional)* | URL de GitHub Pages si cambia el nombre del repositorio |
+### 2. Panel docente
+En Supabase → Edge Functions → Secrets crea `ADMIN_PASSWORD` con la contraseña para `admin.html`.
+
+*(Alternativa al paso 1: `RESEND_API_KEY` + `ADMIN_EMAIL` con una cuenta de resend.com.)*
 
 ## Notas
 

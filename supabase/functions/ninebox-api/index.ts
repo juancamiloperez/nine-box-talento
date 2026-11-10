@@ -1,6 +1,8 @@
 // Nine Box – API para el simulador de la clase de Talento Humano
 // Ingreso sin PIN: el estudiante entra con su correo una vez aprobado.
-// Secrets requeridos: RESEND_API_KEY, ADMIN_EMAIL, ADMIN_PASSWORD
+// Correo al docente: GMAIL_SCRIPT_URL (Google Apps Script, envía desde el Gmail del docente)
+//   o, como alternativa, RESEND_API_KEY + ADMIN_EMAIL.
+// Panel docente: ADMIN_PASSWORD
 // Opcional: APP_URL (URL pública de GitHub Pages, sin barra final)
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -8,6 +10,7 @@ const SB_URL = Deno.env.get("SUPABASE_URL")!;
 const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const RESEND = Deno.env.get("RESEND_API_KEY") ?? "";
 const ADMIN_EMAIL = Deno.env.get("ADMIN_EMAIL") ?? "";
+const GMAIL_SCRIPT_URL = Deno.env.get("GMAIL_SCRIPT_URL") ?? "";
 const ADMIN_PASSWORD = Deno.env.get("ADMIN_PASSWORD") ?? "";
 const APP_URL = (Deno.env.get("APP_URL") ?? "https://juancamiloperez.github.io/nine-box-talento").replace(/\/$/, "");
 
@@ -70,7 +73,7 @@ async function equipoDe(grupo: string, nombre: string) {
 }
 
 async function enviarCorreoAdmin(est: { nombre: string; email: string; grupo: string; equipo_nombre: string; token_aprobacion: string }) {
-  if (!RESEND || !ADMIN_EMAIL) return { enviado: false, motivo: "Correo no configurado (RESEND_API_KEY / ADMIN_EMAIL)" };
+  if (!GMAIL_SCRIPT_URL && (!RESEND || !ADMIN_EMAIL)) return { enviado: false, motivo: "Correo no configurado (GMAIL_SCRIPT_URL)" };
   const link = `${APP_URL}/admin.html?t=${est.token_aprobacion}`;
   const html = `<div style="font-family:Arial,sans-serif;font-size:14px;color:#1d2330">
     <h2 style="margin:0 0 8px">Nueva solicitud de ingreso – Nine Box</h2>
@@ -85,6 +88,24 @@ async function enviarCorreoAdmin(est: { nombre: string; email: string; grupo: st
       <a href="${link}&d=rechazar" style="display:inline-block;background:#b23b3b;color:#fff;padding:11px 20px;border-radius:6px;text-decoration:none;font-weight:bold">❌ Rechazar</a>
     </p>
     <p style="color:#5d6577;font-size:12px">También puedes gestionarla desde el panel: ${APP_URL}/admin.html</p></div>`;
+  const subject = `Solicitud Nine Box: ${est.nombre} (${est.grupo} · ${est.equipo_nombre})`;
+  if (GMAIL_SCRIPT_URL) {
+    try {
+      // Apps Script ejecuta doPost y responde con una redirección (302): eso ya indica éxito.
+      const r = await fetch(GMAIL_SCRIPT_URL, {
+        method: "POST", redirect: "manual",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({ app: "ninebox", subject, html }),
+      });
+      if (r.status === 200 || r.status === 302) {
+        const t = r.status === 200 ? await r.text() : "ok";
+        return t.trim() === "ok" ? { enviado: true } : { enviado: false, motivo: `Apps Script: ${t.slice(0, 200)}` };
+      }
+      return { enviado: false, motivo: `Apps Script HTTP ${r.status}` };
+    } catch (e) {
+      return { enviado: false, motivo: String(e).slice(0, 200) };
+    }
+  }
   try {
     const r = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -92,7 +113,7 @@ async function enviarCorreoAdmin(est: { nombre: string; email: string; grupo: st
       body: JSON.stringify({
         from: "Nine Box TH <onboarding@resend.dev>",
         to: [ADMIN_EMAIL],
-        subject: `Solicitud Nine Box: ${est.nombre} (${est.grupo} · ${est.equipo_nombre})`,
+        subject,
         html,
       }),
     });
@@ -256,7 +277,7 @@ Deno.serve(async (req) => {
       }
       case "admin_estado_correo": {
         if (!(await sesion(b.token, "admin"))) return fail("Sesión de administrador vencida.", 401);
-        return json({ ok: true, resend: !!RESEND, admin_email: !!ADMIN_EMAIL, app_url: APP_URL });
+        return json({ ok: true, correo: !!GMAIL_SCRIPT_URL || (!!RESEND && !!ADMIN_EMAIL), app_url: APP_URL });
       }
       default:
         return fail("Acción desconocida.");
