@@ -2,7 +2,7 @@
 
 Simulador web para que los estudiantes evalúen, bajo hipótesis, el desempeño y el potencial de los integrantes de su equipo, y vean su ubicación en la matriz Nine Box con las estrategias recomendadas por cuadrante.
 
-- **Estudiantes:** `index.html` → solicitan acceso (nombre, correo, grupo, equipo y PIN). Cuando el docente aprueba, ingresan con correo + PIN. Todos los integrantes de un equipo editan la misma matriz (guardado automático).
+- **Estudiantes:** `index.html` → solicitan acceso (nombre, correo, grupo y equipo). El docente aprueba con un clic desde el correo y la página del estudiante entra automáticamente; luego pueden volver a entrar solo con su correo. Todos los integrantes de un equipo editan la misma matriz (guardado automático).
 - **Docente:** `admin.html` → aprueba o rechaza solicitudes, cambia estudiantes de equipo y revisa la matriz, las hipótesis y las calificaciones de cada equipo. Puede copiar todos los resultados para pegarlos en Excel.
 
 ## Arquitectura
@@ -27,6 +27,6 @@ En Supabase → **Edge Functions → Secrets**, crear:
 
 ## Notas
 
-- Si un estudiante olvida el PIN: elimina su solicitud en el panel y pídele que la haga de nuevo; la matriz del equipo se conserva.
-- 5 intentos fallidos de PIN bloquean el ingreso 15 minutos.
-- Los PIN se guardan con hash y sal; las sesiones duran 12 h (estudiantes) y 8 h (docente).
+- No hay PIN: cualquier persona que conozca el correo de un estudiante aprobado podría entrar como él. Es una decisión consciente para simplificar el uso en clase.
+- Si un estudiante se equivocó de correo: elimina su solicitud en el panel y pídele que la haga de nuevo; la matriz del equipo se conserva.
+- Las sesiones duran 30 días (estudiantes) y 8 h (docente).

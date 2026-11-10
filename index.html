@@ -24,18 +24,16 @@
       </div>
 
       <form id="fLogin">
-        <label class="f">Correo electrónico</label>
+        <label class="f">Correo electrónico con el que solicitaste acceso</label>
         <input type="email" id="lEmail" required autocomplete="email">
-        <label class="f">PIN</label>
-        <input type="password" id="lPin" inputmode="numeric" pattern="\d{4,6}" maxlength="6" required autocomplete="current-password">
         <div style="margin-top:14px"><button class="primary" type="submit" id="btnLogin">Ingresar</button></div>
       </form>
 
       <form id="fReq" class="hidden">
         <label class="f">Nombre completo</label>
-        <input type="text" id="rNombre" maxlength="80" required>
+        <input type="text" id="rNombre" maxlength="80" required autocomplete="name">
         <label class="f">Correo electrónico</label>
-        <input type="email" id="rEmail" maxlength="120" required>
+        <input type="email" id="rEmail" maxlength="120" required autocomplete="email">
         <label class="f">Grupo / curso</label>
         <input type="text" id="rGrupo" maxlength="40" placeholder="p. ej., ADMON-01" list="dlGrupos" required>
         <datalist id="dlGrupos"></datalist>
@@ -43,16 +41,19 @@
         <input type="text" id="rEquipo" maxlength="50" placeholder="Escribe el nombre exacto acordado con tu equipo" list="dlEquipos" required>
         <datalist id="dlEquipos"></datalist>
         <p class="note" style="margin:4px 0 0">Si tu equipo ya existe, aparecerá en la lista: elígelo para quedar en la misma matriz que tus compañeros.</p>
-        <label class="f">Crea un PIN (4 a 6 dígitos)</label>
-        <input type="password" id="rPin" inputmode="numeric" pattern="\d{4,6}" maxlength="6" required autocomplete="new-password">
-        <label class="f">Repite el PIN</label>
-        <input type="password" id="rPin2" inputmode="numeric" pattern="\d{4,6}" maxlength="6" required autocomplete="new-password">
         <div style="margin-top:14px"><button class="primary" type="submit" id="btnReq">Enviar solicitud</button></div>
       </form>
 
+      <div id="waitBox" class="hidden" style="text-align:center;padding:10px 0">
+        <div style="font-size:34px">⏳</div>
+        <h2 style="margin:6px 0">Solicitud enviada</h2>
+        <p>Espera a que el docente apruebe tu ingreso. <b>Esta página entrará automáticamente</b> en cuanto lo haga; no necesitas recargarla.</p>
+        <p class="note" id="waitEmail"></p>
+        <button class="sm" id="btnCancelWait">Usar otro correo</button>
+      </div>
       <div class="msg" id="authMsg"></div>
     </div>
-    <p class="note" style="text-align:center;margin-top:14px">Guarda tu PIN: lo necesitarás cada vez que ingreses.</p>
+    <p class="note" style="text-align:center;margin-top:14px">Después de aprobado, podrás volver a entrar desde cualquier equipo solo con tu correo.</p>
   </div>
 </section>
 
@@ -169,7 +170,7 @@
 <script src="assets/core.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-let TOKEN = store.get("nb_token");
+let TOKEN = (()=>{try{return localStorage.getItem("nb_token")}catch{return null}})();
 let ME = null, TEAM = null, M = defaultModel(), VERSION = 0;
 let UI = { selected: null, selBox: "2-2" };
 let dirty = false, saving = false, saveTimer = null, pollTimer = null;
@@ -197,25 +198,48 @@ function fillTeams() {
 }
 $("rGrupo").oninput = fillTeams;
 
+const LS = { get(k){try{return localStorage.getItem(k)}catch{return null}}, set(k,v){try{localStorage.setItem(k,v)}catch{}}, del(k){try{localStorage.removeItem(k)}catch{}} };
+let waitTimer = null;
+function showWait(email) {
+  LS.set("nb_wait", email);
+  ["fLogin", "fReq"].forEach((x) => $(x).classList.add("hidden"));
+  document.querySelector(".tabs").classList.add("hidden");
+  $("authMsg").className = "msg";
+  $("waitBox").classList.remove("hidden");
+  $("waitEmail").textContent = "Correo: " + email;
+  clearInterval(waitTimer);
+  const check = async () => {
+    const r = await api("login", { email });
+    if (r.ok) { clearInterval(waitTimer); LS.del("nb_wait"); hideWait(); TOKEN = r.token; LS.set("nb_token", TOKEN); enterApp(r); toast("¡Acceso aprobado!"); }
+    else if (r.codigo === "rechazado" || r.codigo === "no_existe") { clearInterval(waitTimer); LS.del("nb_wait"); hideWait(); msg(r.error); }
+  };
+  waitTimer = setInterval(check, 8000); check();
+}
+function hideWait() {
+  $("waitBox").classList.add("hidden"); document.querySelector(".tabs").classList.remove("hidden");
+  document.querySelector('.tab[data-tab="login"]').click();
+}
+$("btnCancelWait").onclick = () => { clearInterval(waitTimer); LS.del("nb_wait"); hideWait(); };
+
 $("fReq").onsubmit = async (e) => {
   e.preventDefault();
-  if ($("rPin").value !== $("rPin2").value) return msg("Los PIN no coinciden.");
-  if (!/^\d{4,6}$/.test($("rPin").value)) return msg("El PIN debe tener entre 4 y 6 dígitos.");
   $("btnReq").disabled = true;
-  const r = await api("solicitar", { nombre: $("rNombre").value, email: $("rEmail").value, grupo: $("rGrupo").value, equipo: $("rEquipo").value, pin: $("rPin").value });
+  const email = $("rEmail").value.trim().toLowerCase();
+  const r = await api("solicitar", { nombre: $("rNombre").value, email, grupo: $("rGrupo").value, equipo: $("rEquipo").value });
   $("btnReq").disabled = false;
   if (!r.ok) return msg(r.error || "No se pudo enviar la solicitud.");
   $("fReq").reset();
-  msg("Solicitud enviada. Cuando el docente la apruebe podrás ingresar con tu correo y tu PIN en la pestaña “Ingresar”.", "okm");
+  showWait(email);
 };
 $("fLogin").onsubmit = async (e) => {
   e.preventDefault();
   $("btnLogin").disabled = true;
-  const r = await api("login", { email: $("lEmail").value, pin: $("lPin").value });
+  const email = $("lEmail").value.trim().toLowerCase();
+  const r = await api("login", { email });
   $("btnLogin").disabled = false;
-  if (!r.ok) return msg(r.error || "No fue posible ingresar.", r.error && r.error.includes("pendiente") ? "info" : "err");
-  TOKEN = r.token; store.set("nb_token", TOKEN);
-  enterApp(r);
+  if (r.ok) { TOKEN = r.token; LS.set("nb_token", TOKEN); return enterApp(r); }
+  if (r.codigo === "pendiente") return showWait(email);
+  msg(r.error || "No fue posible ingresar.");
 };
 
 function enterApp(r) {
@@ -230,7 +254,7 @@ function enterApp(r) {
   clearInterval(pollTimer); pollTimer = setInterval(poll, 20000);
 }
 function logout(m) {
-  api("logout", { token: TOKEN }); TOKEN = null; store.del("nb_token");
+  api("logout", { token: TOKEN }); TOKEN = null; LS.del("nb_token");
   clearInterval(pollTimer); $("vApp").classList.add("hidden"); $("vAuth").classList.remove("hidden");
   if (m) msg(m, "info");
 }
@@ -371,9 +395,13 @@ $("btnExport").onclick = () => {
 
 // ---------- INICIO ----------
 (async () => {
-  if (!TOKEN) return;
-  const r = await api("cargar", { token: TOKEN });
-  if (r.ok) enterApp(r); else { store.del("nb_token"); TOKEN = null; }
+  if (TOKEN) {
+    const r = await api("cargar", { token: TOKEN });
+    if (r.ok) return enterApp(r);
+    LS.del("nb_token"); TOKEN = null;
+  }
+  const w = LS.get("nb_wait");
+  if (w) showWait(w);
 })();
 </script>
 </body>

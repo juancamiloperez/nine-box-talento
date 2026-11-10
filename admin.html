@@ -86,7 +86,9 @@ let selTeam = null, selBox = "2-2";
 const show = (v) => ["vToken", "vLogin", "vPanel"].forEach((x) => $(x).classList.toggle("hidden", x !== v));
 
 // ---------- Enlace del correo (?t=...) ----------
-const T = new URLSearchParams(location.search).get("t");
+const QS = new URLSearchParams(location.search);
+const T = QS.get("t"), AUTO_D = QS.get("d");
+let autoDone = false;
 async function tokenView() {
   show("vToken");
   const c = $("tokenCard");
@@ -106,10 +108,16 @@ async function tokenView() {
     $("tA").disabled = $("tR").disabled = true;
     const x = await api("decidir_token", { t: T, d });
     const m = $("tMsg");
-    if (x.ok) { m.className = "msg on okm"; m.textContent = d === "aprobar" ? "Solicitud aprobada. El estudiante ya puede ingresar con su correo y PIN." : "Solicitud rechazada."; setTimeout(tokenView, 1200); }
+    if (x.ok) { m.className = "msg on okm"; m.textContent = d === "aprobar" ? "✅ Solicitud aprobada. Al estudiante se le habilita el ingreso automáticamente." : "Solicitud rechazada."; setTimeout(tokenView, 1200); }
     else { m.className = "msg on err"; m.textContent = x.error; $("tA").disabled = $("tR").disabled = false; }
   };
   $("tA").onclick = () => go("aprobar"); $("tR").onclick = () => go("rechazar");
+  // Clic en "Aprobar" o "Rechazar" desde el correo: se ejecuta de inmediato
+  if (!autoDone && (AUTO_D === "aprobar" || AUTO_D === "rechazar")) {
+    autoDone = true;
+    if (e.estado === "pendiente") go(AUTO_D);
+    else { const m = $("tMsg"); m.className = "msg on info"; m.textContent = `Esta solicitud ya estaba ${e.estado === "aprobado" ? "aprobada" : "rechazada"}. Puedes cambiarla con los botones.`; }
+  }
 }
 
 // ---------- Login ----------
@@ -172,9 +180,9 @@ function renderSol() {
         ${e.estado !== "aprobado" ? `<button class="sm ok" data-a="aprobar">Aprobar</button>` : ""}
         ${e.estado !== "rechazado" ? `<button class="sm danger" data-a="rechazar">Rechazar</button>` : ""}
         <button class="sm" data-a="mover">Cambiar equipo</button>
-        <button class="sm danger" data-a="eliminar" title="Elimina la solicitud para que pueda volver a solicitar (p. ej., si olvidó el PIN)">Eliminar</button>
+        <button class="sm danger" data-a="eliminar" title="Elimina la solicitud para que pueda volver a solicitar">Eliminar</button>
       </td></tr>`).join("")}</tbody></table></div>
-    <p class="note">Si un estudiante olvida su PIN: elimina su solicitud y pídele que solicite acceso de nuevo. Su equipo y la matriz no se pierden.</p>`;
+    <p class="note">Si un estudiante se equivocó de correo, elimina su solicitud y pídele que solicite de nuevo. Su equipo y la matriz no se pierden.</p>`;
   $("solTable").querySelectorAll("button[data-a]").forEach((b) => b.onclick = () => solAction(b.closest("tr").dataset.id, b.dataset.a, b));
 }
 const pendC = {};

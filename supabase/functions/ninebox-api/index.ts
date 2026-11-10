@@ -1,4 +1,5 @@
 // Nine Box – API para el simulador de la clase de Talento Humano
+// Ingreso sin PIN: el estudiante entra con su correo una vez aprobado.
 // Secrets requeridos: RESEND_API_KEY, ADMIN_EMAIL, ADMIN_PASSWORD
 // Opcional: APP_URL (URL pública de GitHub Pages, sin barra final)
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -79,7 +80,10 @@ async function enviarCorreoAdmin(est: { nombre: string; email: string; grupo: st
       <tr><td><b>Grupo</b></td><td>${esc(est.grupo)}</td></tr>
       <tr><td><b>Equipo</b></td><td>${esc(est.equipo_nombre)}</td></tr>
     </table>
-    <p><a href="${link}" style="display:inline-block;background:#2f4b7c;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Revisar y aprobar / rechazar</a></p>
+    <p>
+      <a href="${link}&d=aprobar" style="display:inline-block;background:#2e7d4f;color:#fff;padding:11px 20px;border-radius:6px;text-decoration:none;font-weight:bold;margin-right:8px">✅ Aprobar ingreso</a>
+      <a href="${link}&d=rechazar" style="display:inline-block;background:#b23b3b;color:#fff;padding:11px 20px;border-radius:6px;text-decoration:none;font-weight:bold">❌ Rechazar</a>
+    </p>
     <p style="color:#5d6577;font-size:12px">También puedes gestionarla desde el panel: ${APP_URL}/admin.html</p></div>`;
   try {
     const r = await fetch("https://api.resend.com/emails", {
@@ -134,45 +138,32 @@ Deno.serve(async (req) => {
       }
       case "solicitar": {
         const nombre = clean(b.nombre, 80), email = clean(b.email, 120).toLowerCase();
-        const grupo = clean(b.grupo, 40).toUpperCase(), equipo = clean(b.equipo, 50), pin = String(b.pin ?? "");
+        const grupo = clean(b.grupo, 40).toUpperCase(), equipo = clean(b.equipo, 50);
         if (nombre.length < 3) return fail("Escribe tu nombre completo.");
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail("Correo no válido.");
         if (!grupo) return fail("Indica tu grupo.");
         if (equipo.length < 2) return fail("Indica el nombre de tu equipo.");
-        if (!/^\d{4,6}$/.test(pin)) return fail("El PIN debe tener entre 4 y 6 dígitos.");
         const { data: existe } = await db.from("nb_estudiantes").select("estado").eq("email", email).maybeSingle();
-        if (existe) return fail(`Ya existe una solicitud con este correo (estado: ${existe.estado}). Si necesitas cambiarla, habla con el docente.`);
-        const salt = randomToken(16);
-        const row = {
-          nombre, email, grupo, equipo_nombre: equipo, pin_salt: salt,
-          pin_hash: await sha256(salt + pin), token_aprobacion: randomToken(24),
-        };
+        if (existe) {
+          if (existe.estado === "pendiente") return json({ ok: true, ya_existia: true, estado: "pendiente" });
+          return fail(existe.estado === "aprobado"
+            ? "Este correo ya fue aprobado. Usa la pestaña “Ingresar”."
+            : "La solicitud con este correo fue rechazada. Habla con el docente.");
+        }
+        const row = { nombre, email, grupo, equipo_nombre: equipo, token_aprobacion: randomToken(24) };
         const { error } = await db.from("nb_estudiantes").insert(row);
         if (error) return fail("No se pudo registrar la solicitud. Intenta de nuevo.");
         const correo = await enviarCorreoAdmin(row);
         if (!correo.enviado) console.error("Correo no enviado:", correo.motivo);
-        return json({ ok: true, correo_enviado: correo.enviado });
+        return json({ ok: true, estado: "pendiente", correo_enviado: correo.enviado });
       }
       case "login": {
-        const email = clean(b.email, 120).toLowerCase(), pin = String(b.pin ?? "");
+        const email = clean(b.email, 120).toLowerCase();
         const { data: est } = await db.from("nb_estudiantes").select("*").eq("email", email).maybeSingle();
-        if (!est) { await sleep(600); return fail("Correo o PIN incorrectos."); }
-        if (est.bloqueado_hasta && new Date(est.bloqueado_hasta) > new Date())
-          return fail("Demasiados intentos. Espera 15 minutos e intenta de nuevo.");
-        const okPin = safeEqual(await sha256(est.pin_salt + pin), est.pin_hash);
-        if (!okPin) {
-          const n = est.intentos_fallidos + 1;
-          await db.from("nb_estudiantes").update({
-            intentos_fallidos: n >= 5 ? 0 : n,
-            bloqueado_hasta: n >= 5 ? new Date(Date.now() + 15 * 60_000).toISOString() : null,
-          }).eq("id", est.id);
-          await sleep(600);
-          return fail("Correo o PIN incorrectos.");
-        }
-        await db.from("nb_estudiantes").update({ intentos_fallidos: 0, bloqueado_hasta: null }).eq("id", est.id);
-        if (est.estado === "pendiente") return fail("Tu solicitud aún está pendiente de aprobación por el docente.");
-        if (est.estado === "rechazado") return fail("Tu solicitud fue rechazada. Consulta con el docente.");
-        const token = await nuevaSesion("estudiante", est.id, 12);
+        if (!est) { await sleep(400); return json({ ok: false, codigo: "no_existe", error: "No hay ninguna solicitud con este correo. Solicita acceso primero." }, 404); }
+        if (est.estado === "pendiente") return json({ ok: false, codigo: "pendiente", error: "Tu solicitud aún está pendiente de aprobación por el docente." }, 403);
+        if (est.estado === "rechazado") return json({ ok: false, codigo: "rechazado", error: "Tu solicitud fue rechazada. Consulta con el docente." }, 403);
+        const token = await nuevaSesion("estudiante", est.id, 24 * 30);
         const { data: eq } = await db.from("nb_equipos").select("*").eq("id", est.equipo_id).maybeSingle();
         return json({ ok: true, token, estudiante: publicEst(est), equipo: eq });
       }
